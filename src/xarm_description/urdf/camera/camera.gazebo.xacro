@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+    <xacro:macro name="camera_gazebo" params="prefix">
+        <link name="${prefix}link_camera">
+            <inertial>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <mass value="0.1" />
+                <inertia 
+          ixx="0.01" ixy="0.0" ixz="0.0" 
+          iyy="0.01" iyz="0.0" izz="0.01" />
+            </inertial>
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <sphere radius="0.02"/>
+                </geometry>
+                <material name="${prefix}White" />
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <sphere radius="0.02"/>
+                </geometry>
+            </collision>
+        </link>
+        <joint name="${prefix}joint_camera" type="fixed">
+            <origin xyz="0.692 0.001 1.17" rpy="0 1.5708 0" />
+            <parent link="${prefix}link_base" />
+            <child link="${prefix}link_camera" />
+        </joint>
+        <gazebo reference="${prefix}link_camera">
+            <material>Gazebo/Black</material>
+        </gazebo>
+        <gazebo reference="${prefix}link_camera">
+            <sensor type="camera" name="xarm_camera_node">
+                <always_on>true</always_on>
+                <update_rate>10.0</update_rate>
+                <visualize>true</visualize>
+                <camera name="head">
+                    <horizontal_fov>0.9948376567</horizontal_fov>
+                    <image>
+                        <width>640</width>
+                        <height>480</height>
+                        <format>B8G8R8</format>
+                    </image>
+                    <clip>
+                        <near>0.02</near>
+                        <far>300</far>
+                    </clip>
+                    <noise>
+                        <type>gaussian</type>
+                        <mean>0.0</mean>
+                        <stddev>0.007</stddev>
+                    </noise>
+                </camera>
+            </sensor>
+        </gazebo>
+    </xacro:macro>
+</robot>

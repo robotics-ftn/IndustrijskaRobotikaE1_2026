@@ -1,0 +1,3 @@
+novi_talker:
+  ros__parameters:
+    publish_rate: 0.05
