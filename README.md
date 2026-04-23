@@ -420,3 +420,266 @@ Koristi se pretezno za proveru i debuggovanje tokom razvoja. Pokretanje:
 ```sh
 ros2 run rviz2 rviz2
 ```
+
+## Vezbe 3 - Moveit 2
+
+MoveIt 2 je platforma za manipulaciju robotima kreirana za ROS 2. Sastoji se od naprednih algoritama za planiranje i sintezu trajektorije, kinematiku, upravljanje, itd.
+
+Instalacija:
+```sh
+sudo apt install ros-jazzy-moveit*
+```
+Za integraciju naseg robota u MoveIt koristicemo njihov `setup_assistan.launch.py`.
+Ovaj launch fajl pokrece GUI aplikaciju za konfiguraciju svega neophodnog kako bi
+nasa robotska ruka mogla da se koristi sa Moveit-om.
+
+Prvi korak je da buildujemo nase okruzenje (workspace):
+
+```sh
+colcon build --symlink-install
+```
+
+Zatim source:
+
+```sh
+source install/setup.bash
+```
+
+Pokretanje GUI aplikacije za MoveIt:
+
+```sh
+ros2 launch moveit_setup_assistant setup_assistant.launch.py 
+```
+
+Ukoliko imate integrisanu graficku karticu, pokrenuti sa sledecom komandom 
+ukoliko dodje do greske prilikom ucitavanja URDF-a.
+
+```sh
+export QT_QPA_PLATFORM=xcb
+ros2 launch moveit_setup_assistant setup_assistant.launch.py
+```
+
+Mozemo pratiti uputstvo sa [sajta](https://moveit.picknik.ai/main/doc/examples/setup_assistant/setup_assistant_tutorial.html)
+na kome je objasnjeno detaljno sta koja stavka znaci i kako se konfigurise.
+
+Ucitavamo fajl `xarm7_with_gripper_camera.urdf` is paketa `xarm_description`.
+
+Nakon podesavanja svega, sacuvati u folder `xarm_moveit_config`.
+
+Iz ovoga dobijamo `SRDF` fajl koji nam daje semanticki opis naseg robota.
+
+## PREGLED STANJA
+
+Paket `xarm_description` 
+---
+Sadrzi vizuale i kinematsku strukturu naseg robota.
+Opisuje karakteristike zglobova i segmenata. Odavde ucitavamo URDF za
+`MoveIt Setup Assistant` aplikaciju.
+
+Paket `xarm_moveit_config` 
+---
+Nastaje kao rezultat konfigurisanja naseg robota
+iz prethodno pomenute aplikacije. Sastoji se od `demo.launch.py` koji pokrece
+nas sistem kako bismo ga testirali. Takodje sastoji se od sledecih konfiguracionih
+fajlova:
+
+- `initial_positions.yaml` - opisuje pocetna stanja zglobova naseg robota
+- `joint_limits.yaml` - opisuje ogranicenja na brzinu i ubrzanja po zglobu
+- `kinematics.yaml`- parametri algoritma za inverznu i direktnu kinematiku
+- `ros2_controllers.yaml` - tipovi kontrolera i zglobovi vezani za svaki, u nasem slucaju ovi kontroleri su simulirani kao `FakeSystem` gde se svaka komanda izvrsava idealno. `ros2_control` paket ovo radi za nas. Na realnom robotu bi se koristila klasa iz `ros2_control` paketa koju bismo nasledili i implementirali odgovarajuce metode kako bismo ostvarili komunikaciju sa nasim robotom i spakovali poruke u odgovarajuci format. Ovde se ostvaruje npr. USB komunikacija ka robotu, ili TCP, ili nesto trece. Bilo koji vid fizicke komunikacije sa robotom je potrebno implementirati u _wrapper_  od `ros2_control` paketa
+- `moveit_controllers.yaml` - parametri koji govore MoveIt-u na koje kontrolere da salje komande. Npr na *arm_controller* salje preko akcije `follow_joint_trajectory`. Neki opsti tok: 
+    1. trazimo od Moveit da pomeri ruku u neki polozaj
+    2. izvrsi se planiranje trajektorije (sekvenca pozicija zglobova kroz vreme)
+    3. MoveIt pogleda parametre iz `moveit_controllers.yaml` da vidi koji kontroler je zaduzen za kretanje ruke i kako se zove akcija na koju salje
+    4. MoveIt salje trajektoriju na `arm_controller/follow_joint_trajectory` server akcije
+    5. `arm_controller` definisan u `ros2_controllers.yaml` koji je pokrenut u `ros2_control_node` poprima komandu i izvrsava je (prosledjuje stvarnom/laznom sistemu)
+
+Paket `robot_move`
+---
+Pokrece sve potrebne alate kako bi upravljanje robotom bilo moguce:
+- **robot_state_publisher**: publikuje transformacije izmedju zglobova na osnovu URDF i prijavljuje se na `joint_states` topic kako bi uvek imao azurno stanje o zglobovima
+
+- **ros2_control_node**: iz paketa `controller_manager` pokrecemo ovaj node kome prosledjujemo odgovarajuce `ros2_controllers.yaml` parametre. Prijavljuje se na temu `robot_description` i ucitava `<ros2_control>` tagove iz URDF-a kako bi inicijalizovao potreban hardverski interfejs (u nasem slucaju `Fake`). Sluzi kao menadzer svih kontrolera. Zna za postojanje kontrolera: `arm_controller`, `hand_controller` i `joint_state_controller`, ali su neaktivni dok ne pozovemo `spawn`. Ono sto se u pozadini desava na svaku periodu upravljanje, npr 100 Hz, pozivaju se metode unutar `ros2_control_node`:
+    1. prvo `read()` ka hardverskom interfejsu -> citamo trenutno stanje zglobova
+    2. poziva se `update()` za svaki aktivan kontroler -> kontroler racuna sledecu komandu
+    3. poziva se `write()` nad hardverskim interfejsom -> salje se komanda hardveru
+
+- **joint_state_broadcaster**: citanjem iz URDF `<ros2_control>` tag-a, svi navedeni zglobovi se na svaku periodu citaju i salju na `joint_states` topic.
+
+- **spawner**: poziva servise na `ros2_control_node` kako bi ucitao i aktivirao odredjeni kontroler. Prolazi kroz sledece korake:
+    1. `/controller_manager/load_controller` - ucitava `.so` biblioteku kontrolera u memoriju procesa pomocu `pluginlib`-a, kontroler je u stanju `unconfigured`
+    2. `/controller_manager/configure_controller` - kontroler cita svoje parametre i rezervise hardverske interfejse koje mu trebaju (npr. `joint1/position`). Ukoliko dva kontrolera pokusaju da rezervisu isti interfejs, konfiguracija ne uspeva. Kontroler prelazi u stanje `inactive`
+    3. `/controller_manager/switch_controller` - kontroler postaje `active` i dodaje se u kontrolnu petlju. Od ovog trenutka se poziva njegova `update()` metoda (npr. na svakih 100Hz)
+
+Nakon ovoga, interfejs ka robotu je spreman (bio on simuliran, fake ili pravi). Preostaje nam da ucitamo odgovarajuce parametre za __MoveIt__. 
+
+MoveItPy node ocekuje sledece parametre kako bi mogao da vrsi planiranje i izvrsavanje:
+
+```py
+robot_move_node = Node(
+    package='robot_move',
+    executable='robot_move',
+    output='screen',
+    parameters=[
+        {"robot_description": robot_description},           # URDF string (iz xacro)
+        {"robot_description_semantic": srdf_content},       # SRDF string
+        kinematics_yaml,        # parametri IK/FK solvera po grupama (arm, hand, itd)
+        joint_limits_yaml,      # ogranicenja brzina i ubrzanja po zglobovima
+        moveit_controllers_yaml,# adrese kontrolera ka kojima se salju trajektorije
+        ompl_planning_yaml,     # konfiguracija OMPL planera (tip planera, parametri)
+        moveit_cpp_yaml,        # opcije scene monitora, pipeline-ovi, podrazumevani parametri planiranja
+    ]
+)
+```
+
+**Ucitavanje parametara u launch fajlu**
+
+```py
+import os
+from xacro import process_file
+from ament_index_python.packages import get_package_share_directory
+
+xarm_moveit_pkg_dir = get_package_share_directory('xarm_moveit_config')
+robot_move_pkg_dir  = get_package_share_directory('robot_move')
+
+# URDF - procitati i konvertovati iz xacro - voditi racuna ako radimo sa simuliranim/pravim robotom izmeniti ros2 tagove da plugin odgovara tome, u primeru se koristi mock_components/GenericSystem
+robot_description = process_file(
+    os.path.join(xarm_moveit_pkg_dir, 'config', 'UF_ROBOT.urdf.xacro')
+).toxml()
+
+# SRDF - procitati kao string
+srdf_content = open(
+    os.path.join(xarm_moveit_pkg_dir, 'config', 'UF_ROBOT.srdf')
+).read()
+
+robot_move_node = Node(
+    package='robot_move',
+    executable='robot_move',
+    parameters=[
+        {"robot_description": robot_description},
+        {"robot_description_semantic": srdf_content},
+        os.path.join(xarm_moveit_pkg_dir, 'config', 'kinematics.yaml'),
+        os.path.join(xarm_moveit_pkg_dir, 'config', 'joint_limits.yaml'),
+        os.path.join(xarm_moveit_pkg_dir, 'config', 'moveit_controllers.yaml'),
+        os.path.join(xarm_moveit_pkg_dir, 'config', 'ompl_planning.yaml'),
+        os.path.join(robot_move_pkg_dir,  'config', 'moveit_cpp.yaml'),
+    ]
+)
+```
+
+**Konfigurisanje planera - `moveit_cpp.yaml`**
+
+U `moveit_cpp.yaml` se navodi koji su pipeline-ovi dostupni i koji se koristi podrazumevano:
+
+```yaml
+planning_pipelines:
+  pipeline_names: ["ompl", "pilz_industrial_motion_planner"]
+
+plan_request_params:
+  planning_pipeline: ompl          # podrazumevani planer
+  planning_time: 5.0
+  max_velocity_scaling_factor: 1.0
+  max_acceleration_scaling_factor: 1.0
+```
+
+**Promena planera u Python kodu**
+
+```py
+from moveit.planning import MoveItPy, PlanRequestParameters
+
+robot = MoveItPy(node_name="robot_move_moveit")
+arm   = robot.get_planning_component("arm")
+
+arm.set_start_state_to_current_state()
+arm.set_goal_state(configuration_name="home")
+
+# --- OMPL ---
+ompl_params = PlanRequestParameters(robot, "ompl")
+ompl_params.planner_id = "RRTConnectkConfigDefault"
+ompl_params.planning_time = 5.0
+
+# --- Pilz PTP (point-to-point, zglobni prostor) ---
+pilz_ptp = PlanRequestParameters(robot, "pilz_industrial_motion_planner")
+pilz_ptp.planner_id = "PTP"
+pilz_ptp.max_velocity_scaling_factor = 0.5
+
+# --- Pilz LIN (linearna putanja u kartezijanskom prostoru) ---
+pilz_lin = PlanRequestParameters(robot, "pilz_industrial_motion_planner")
+pilz_lin.planner_id = "LIN"
+
+# Odabir planera se vrsi prosledjivanjem parametara u plan()
+plan = arm.plan(plan_request_parameters=ompl_params)
+# ili
+plan = arm.plan(plan_request_parameters=pilz_ptp)
+
+if plan:
+    robot.execute(plan.trajectory, controllers=[])
+```
+
+Dostupni `planner_id` vrednosti za pipeline:
+
+- **`ompl`**:   
+    - SBL
+    - EST
+    - LBKPIECE
+    - BKPIECE
+    - KPIECE
+    - RRT
+    - RRTConnect
+    - RRTstar
+    - TRRT
+    - PRM
+    - PRMstar
+    - FMT
+    - BFMT
+    - PDST
+    - STRIDE
+    - BiTRRT
+    - LBTRRT
+    - BiEST
+    - ProjEST
+    - LazyPRM
+    - LazyPRMstar
+    - SPARS
+    - SPARStwo
+
+- **`pilz_industrial_motion_planner	`**:
+    - PTP
+    - LIN : linearno kretanje, koriste se `cartesian limits` parametri za generisanje profila brzine
+    - CIRC : cirkularno (kruzno) kretanje
+
+---
+
+Posto MoveItPy ocekuje da su parametri planera u _namespace_-u pod odgovarajucim imenom, ucitane YAML fajlove je potrebno proslediti kao parametri u node gde se pokrece MoveItPy kao:
+
+```py
+import yaml
+
+def load_yaml(file_path):
+    with open(file_path, 'r') as f:
+        return yaml.safe_load(f)
+
+robot_move_pkg_dir = get_package_share_directory('robot_move')
+
+ompl_config = load_yaml(
+    os.path.join(robot_move_pkg_dir, 'config', 'ompl_planning.yaml')
+)
+pilz_config = load_yaml(
+    os.path.join(robot_move_pkg_dir, 'config', 'pilz_industrial_motion_planner_planning.yaml')
+)
+
+robot_move_node = Node(
+    package='robot_move',
+    executable='robot_move',
+    parameters=[
+        {"robot_description": robot_description},
+        {"robot_description_semantic": srdf_content},
+        os.path.join(xarm_moveit_pkg_dir, 'config', 'kinematics.yaml'),
+        os.path.join(xarm_moveit_pkg_dir, 'config', 'joint_limits.yaml'),
+        os.path.join(xarm_moveit_pkg_dir, 'config', 'moveit_controllers.yaml'),
+        {"ompl": ompl_config},                                          # namespace mora da odgovara imenu pipeline-a
+        {"pilz_industrial_motion_planner": pilz_config},                # isti princip
+        os.path.join(robot_move_pkg_dir, 'config', 'moveit_cpp.yaml'), # pipeline_names mora sadrzati oba
+    ]
+)
+```

@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: xarm_description
+    relative_path: urdf/xarm7_with_gripper_camera.urdf
+  srdf:
+    relative_path: config/UF_ROBOT.srdf
+  package_settings:
+    author_name: Lazar Milic
+    author_email: miliclazar@uns.ac.rs
+    generated_timestamp: 1776932466
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
