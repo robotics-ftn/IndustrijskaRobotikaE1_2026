@@ -80,7 +80,7 @@ class MyNode(Node):
 
     def __init__(self):
         super().__init__('talker_node')
-        self.publisher_ = self.create_publisher(String, 'talking', 10)
+        self.publisher_ = self.create_publisher(String, 'talker', 10)
         timer_period = 0.5  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.i = 0
@@ -96,7 +96,7 @@ class MyNode(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    minimal_publisher = MinimalPublisher()
+    minimal_publisher = MyNode()
 
     rclpy.spin(minimal_publisher)
 
@@ -138,8 +138,7 @@ entry_points={
 
 Ovo znaci da cemo ukoliko zelimo da pokrenemo `main` funkciju iz naseg `my_publisher.py`
 fajla, treba da pokrenemo komandu: `ros2 run my_pkg talker`. Dakle, sa leve strane
-znaka jednako je alijas koji cemo koristiti u komandama, a sa desne strane je putanja
-nase funkcije relativno u odnosu na `setup.py` kao `folder.naziv_fajla:naziv_funkcije`.
+znaka jednako je alijas koji cemo koristiti u komandama, a sa desne strane je ono sto ce biti pozvano `naziv_paketa.naziv_modula:naziv_funkcije`. Paket je naziv foldera koji u sebi sadrzi `__init__.py` fajl, a modul je naziv python fajla iz tog paketa.
 
 
 Identicnu stvar mozemo uraditi za cvor koji se prijavljuje na tu temu:
@@ -220,7 +219,7 @@ def generate_launch_description():
             namespace='',
             executable='talker',
             name='talker',
-            arguments=['--ros-args', '--log-level', 'info']  # koji nivo logovanja hocemo (obrisati --log-level i info ako hocemo sve)
+            ros_arguments=['--log-level', 'info']  # koji nivo logovanja hocemo (obrisati --log-level i info ako hocemo sve)
         ),
         Node(
             package='my_pkg',
@@ -254,7 +253,7 @@ setup(
     data_files=[
         # ... Other data files
         # Include all launch files.
-        (os.path.join('share', package_name, 'launch'), glob('launch/*'))
+        (os.path.join('share', package_name, 'launch'), glob(os.path.join("launch", "*.launch.py")))
     ]
 )
 ```
@@ -350,7 +349,7 @@ naziv naseg robota.
 
 URDF nam omogucava, nakon njegovog ucitavanja, da dobijemo homogene transformacije
 izmedju bilo koja dva segmenta, ukljucujuci i transformaciju vrha robota u odnosu
-na bazu robota. Za ovo je zasluzen [oficijalni paket](https://docs.ros.org/en/foxy/Tutorials/Intermediate/URDF/Using-URDF-with-Robot-State-Publisher.html) `robot_state_publisher` koji ocekuje najmanje jedan parametar: `robot_description`.
+na bazu robota. Za ovo je zasluzen [oficijalni paket](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/URDF/Using-URDF-with-Robot-State-Publisher.html) `robot_state_publisher` koji ocekuje najmanje jedan parametar: `robot_description`.
 Vrednost ovog parametra je ucitan URDF fajl i objedinjen u jedan `string`. Kao
 sto je dato u launch fajl primeru:
 
@@ -468,7 +467,14 @@ Nakon podesavanja svega, sacuvati u folder `xarm_moveit_config`.
 
 Iz ovoga dobijamo `SRDF` fajl koji nam daje semanticki opis naseg robota.
 
-## PREGLED STANJA
+### PREGLED STANJA
+
+Instalirati sledece:
+- `sudo apt install ros-jazzy-joint-state-publisher`
+- `sudo apt install ros-jazzy-robot-state-publisher`
+- `sudo apt install ros-jazzy-ros2-control*`
+- `sudo apt install ros-jazzy-moveit*`
+- `sudo apt install ros-jazzy-rqt*`
 
 Paket `xarm_description` 
 ---
